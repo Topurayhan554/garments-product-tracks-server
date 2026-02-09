@@ -1,6 +1,6 @@
 const express = require("express");
 const cors = require("cors");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
 require("dotenv").config();
 const port = process.env.PORT || 3000;
@@ -26,6 +26,32 @@ async function run() {
     await client.connect();
 
     const db = client.db("garments_production_db");
+
+    const productsCollection = db.collection("/products");
+
+    // product api
+    app.get("/products", async (req, res) => {
+      const query = {};
+
+      const options = { sort: { createdAt: -1 } };
+      const cursor = productsCollection.find(query, options);
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    app.post("/products", async (req, res) => {
+      const product = req.body;
+      const result = await productsCollection.insertOne(product);
+      res.send(result);
+    });
+
+    app.delete("/products/:id", async (req, res) => {
+      const result = await productsCollection.findOneAndDelete({
+        _id: new ObjectId(req.params.id),
+      });
+
+      res.send(result);
+    });
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
