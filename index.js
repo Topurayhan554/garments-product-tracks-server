@@ -5,9 +5,27 @@ const app = express();
 require("dotenv").config();
 const port = process.env.PORT || 3000;
 
+const admin = require("firebase-admin");
+
+const serviceAccount = require("./garments-production-tracker-firebase-adminsdk.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
 // middleware
 app.use(express.json());
 app.use(cors());
+
+const verifyFBToken = (req, res, next) => {
+  console.log("headers", req.headers.authorization);
+
+  const token = req.headers.authorization;
+  if (!token) {
+    return res.status(401).send({ message: "unauthorized access" });
+  }
+  next();
+};
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster5656.l9idbez.mongodb.net/?appName=Cluster5656`;
 
@@ -30,12 +48,18 @@ async function run() {
     const productsCollection = db.collection("/products");
 
     // product api
+
     app.get("/products", async (req, res) => {
       const query = {};
-
       const options = { sort: { createdAt: -1 } };
+
+      // if (req.query.email) {
+      //   query.email = req.query.email;
+      // }
+
       const cursor = productsCollection.find(query, options);
       const result = await cursor.toArray();
+
       res.send(result);
     });
 
@@ -53,7 +77,8 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/products/:id", async (req, res) => {
+    // Get single product by ID
+    app.get("/products/:id", verifyFBToken, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await productsCollection.findOne(query);
