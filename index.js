@@ -41,9 +41,7 @@ async function run() {
     const ordersCollection = db.collection("orders");
     const usersCollection = db.collection("users");
 
-    // ==============================================
     // PRODUCTS API
-    // ==============================================
 
     app.get("/products", async (req, res) => {
       try {
@@ -115,12 +113,9 @@ async function run() {
       }
     });
 
-    // ==============================================
+    
     // USERS API
-    // ⚠️ Static routes BEFORE dynamic /:id routes!
-    // ==============================================
-
-    // GET all users (with optional filters)
+    // GET all users
     app.get("/users", async (req, res) => {
       try {
         const { role, status, search } = req.query;
@@ -180,7 +175,7 @@ async function run() {
     });
 
     // POST bulk delete users
-    // ⚠️ Must be BEFORE /users/:id
+
     app.post("/users/bulk-delete", async (req, res) => {
       try {
         const { userIds } = req.body;
@@ -209,7 +204,6 @@ async function run() {
     });
 
     // GET user stats summary
-    // ⚠️ Must be BEFORE /users/:id
     app.get("/users/stats", async (req, res) => {
       try {
         const allUsers = await usersCollection.find({}).toArray();
@@ -344,11 +338,8 @@ async function run() {
       }
     });
 
-    // ==============================================
-    // ORDERS API
-    // ⚠️ Static routes BEFORE dynamic /:id routes!
-    // ==============================================
 
+    // ORDERS API
     // POST create order
     app.post("/orders", async (req, res) => {
       try {
@@ -362,7 +353,7 @@ async function run() {
 
         const result = await ordersCollection.insertOne(order);
 
-        // Increment user's totalOrders if userEmail exists
+       
         if (order.userEmail) {
           await usersCollection.updateOne(
             { email: order.userEmail },
@@ -481,7 +472,6 @@ async function run() {
     });
 
     // GET approved orders
-    // ⚠️ Must be BEFORE /orders/:id
     app.get("/orders/approved", async (req, res) => {
       try {
         const approvedStatuses = [
@@ -506,7 +496,6 @@ async function run() {
     });
 
     // GET pending stats
-    // ⚠️ Must be BEFORE /orders/:id
     app.get("/orders/pending-stats", async (req, res) => {
       try {
         const pendingOrders = await ordersCollection
@@ -549,7 +538,6 @@ async function run() {
     });
 
     // GET production stats
-    // ⚠️ Must be BEFORE /orders/:id
     app.get("/orders/production-stats", async (req, res) => {
       try {
         const approvedStatuses = [
@@ -609,7 +597,6 @@ async function run() {
     });
 
     // GET orders by production status
-    // ⚠️ Must be BEFORE /orders/:id
     app.get("/orders/production/:status", async (req, res) => {
       try {
         const { status } = req.params;
@@ -634,7 +621,7 @@ async function run() {
     });
 
     // PATCH bulk status update
-    // ⚠️ Must be BEFORE /orders/:id
+
     app.patch("/orders/bulk-status-update", async (req, res) => {
       try {
         const { orderIds, newStatus } = req.body;
@@ -814,9 +801,9 @@ async function run() {
 run().catch(console.dir);
 
 app.get("/", (req, res) => {
-  res.send("🧵 Garments Production Tracker is running!");
+  res.send("Garments Production Tracker is running!");
 });
 
 app.listen(port, () => {
-  console.log(`🚀 Server running on port ${port}`);
+  console.log(`Server running on port ${port}`);
 });
