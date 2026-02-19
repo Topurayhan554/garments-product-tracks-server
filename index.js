@@ -45,7 +45,7 @@ async function run() {
 
     const db = client.db("garments_production_db");
 
-    const productsCollection = db.collection("/products");
+    const productsCollection = db.collection("products");
     const ordersCollection = db.collection("orders");
 
     // product api
@@ -188,8 +188,36 @@ async function run() {
       }
     });
 
-    // 3. GET SINGLE ORDER by ID
+    // Get Approved Orders
+    app.get("/orders/approved", async (req, res) => {
+      try {
+        // Fetch all approved orders (not pending or cancelled)
+        const approvedStatuses = [
+          "confirmed",
+          "in-production",
+          "quality-check",
+          "packed",
+          "in-transit",
+          "out-for-delivery",
+          "delivered", // Optional: include delivered or make separate endpoint
+        ];
 
+        const query = {
+          status: { $in: approvedStatuses },
+        };
+
+        const options = { sort: { confirmedAt: -1 } }; // Latest first
+        const cursor = ordersCollection.find(query, options);
+        const result = await cursor.toArray();
+
+        res.send(result);
+      } catch (error) {
+        console.error("Get approved orders error:", error);
+        res.status(500).send({ message: "Failed to fetch approved orders" });
+      }
+    });
+
+    // 3. GET SINGLE ORDER by ID
     app.get("/orders/:id", async (req, res) => {
       try {
         const id = req.params.id;
@@ -313,6 +341,419 @@ async function run() {
       } catch (error) {
         console.error("Delete order error:", error);
         res.status(500).send({ message: "Failed to delete order" });
+      }
+    });
+
+    // order approval
+    // app.patch("/orders/:id/status", async (req, res) => {
+    //   try {
+    //     const id = req.params.id;
+    //     const { status, cancelReason, cancelledBy, confirmedAt } = req.body;
+
+    //     const validStatuses = [
+    //       "pending",
+    //       "confirmed",
+    //       "in-production",
+    //       "quality-check",
+    //       "packed",
+    //       "in-transit",
+    //       "out-for-delivery",
+    //       "delivered",
+    //       "cancelled",
+    //     ];
+
+    //     if (!validStatuses.includes(status)) {
+    //       return res.status(400).send({
+    //         success: false,
+    //         message: "Invalid status",
+    //       });
+    //     }
+
+    //     // Build update document
+    //     const updateDoc = {
+    //       $set: {
+    //         status: status,
+    //         updatedAt: new Date(),
+    //       },
+    //     };
+
+    //     // Handle confirmation (approved)
+    //     if (status === "confirmed" && confirmedAt) {
+    //       updateDoc.$set.confirmedAt = confirmedAt;
+    //       updateDoc.$set.confirmedBy = "admin";
+    //     }
+
+    //     // Handle delivery
+    //     if (status === "delivered") {
+    //       updateDoc.$set.deliveredDate = new Date();
+    //     }
+
+    //     // Handle cancellation/rejection
+    //     if (status === "cancelled") {
+    //       updateDoc.$set.cancelledAt = new Date();
+
+    //       if (cancelReason) {
+    //         updateDoc.$set.cancelReason = cancelReason;
+    //       }
+
+    //       if (cancelledBy) {
+    //         updateDoc.$set.cancelledBy = cancelledBy;
+    //       }
+
+    //       // Auto-refund if paid
+    //       const order = await ordersCollection.findOne({
+    //         _id: new ObjectId(id),
+    //       });
+    //       if (order && order.paymentStatus === "paid") {
+    //         updateDoc.$set.paymentStatus = "refunded";
+    //         updateDoc.$set.refundedAt = new Date();
+    //       }
+    //     }
+
+    //     // Update order
+    //     const result = await ordersCollection.updateOne(
+    //       { _id: new ObjectId(id) },
+    //       updateDoc,
+    //     );
+
+    //     if (result.matchedCount === 0) {
+    //       return res.status(404).send({
+    //         success: false,
+    //         message: "Order not found",
+    //       });
+    //     }
+
+    //     // Get updated order
+    //     const updatedOrder = await ordersCollection.findOne({
+    //       _id: new ObjectId(id),
+    //     });
+
+    //     res.send({
+    //       success: true,
+    //       message:
+    //         status === "confirmed"
+    //           ? "Order approved successfully"
+    //           : status === "cancelled"
+    //             ? "Order rejected successfully"
+    //             : `Order status updated to ${status}`,
+    //       order: updatedOrder,
+    //     });
+    //   } catch (error) {
+    //     console.error("Update status error:", error);
+    //     res.status(500).send({
+    //       success: false,
+    //       message: "Failed to update order status",
+    //     });
+    //   }
+    // });
+
+    // Bulk Approve Orders
+    app.post("/orders/bulk-approve", async (req, res) => {
+      try {
+        const { orderIds } = req.body;
+
+        if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+          return res.status(400).send({
+            success: false,
+            message: "Order IDs are required",
+          });
+        }
+
+        const objectIds = orderIds.map((id) => new ObjectId(id));
+
+        const updateDoc = {
+          $set: {
+            status: "confirmed",
+            confirmedAt: new Date(),
+            confirmedBy: "admin",
+            updatedAt: new Date(),
+          },
+        };
+
+        // Update all pending orders to confirmed
+        const result = await ordersCollection.updateMany(
+          {
+            _id: { $in: objectIds },
+            status: "pending", // Only approve pending orders
+          },
+          updateDoc,
+        );
+
+        res.send({
+          success: true,
+          message: `${result.modifiedCount} orders approved successfully`,
+          approvedCount: result.modifiedCount,
+        });
+      } catch (error) {
+        console.error("Bulk approve error:", error);
+        res.status(500).send({
+          success: false,
+          message: "Failed to approve orders",
+        });
+      }
+    });
+
+    // Bulk Reject Orders
+
+    app.post("/orders/bulk-reject", async (req, res) => {
+      try {
+        const { orderIds, cancelReason } = req.body;
+
+        if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+          return res.status(400).send({
+            success: false,
+            message: "Order IDs are required",
+          });
+        }
+
+        if (!cancelReason || !cancelReason.trim()) {
+          return res.status(400).send({
+            success: false,
+            message: "Cancellation reason is required",
+          });
+        }
+
+        const objectIds = orderIds.map((id) => new ObjectId(id));
+
+        const updateDoc = {
+          $set: {
+            status: "cancelled",
+            cancelledAt: new Date(),
+            cancelReason: cancelReason,
+            cancelledBy: "admin",
+            updatedAt: new Date(),
+          },
+        };
+
+        // Update all pending orders to cancelled
+        const result = await ordersCollection.updateMany(
+          {
+            _id: { $in: objectIds },
+            status: "pending", // Only reject pending orders
+          },
+          updateDoc,
+        );
+
+        res.send({
+          success: true,
+          message: `${result.modifiedCount} orders rejected successfully`,
+          rejectedCount: result.modifiedCount,
+        });
+      } catch (error) {
+        console.error("Bulk reject error:", error);
+        res.status(500).send({
+          success: false,
+          message: "Failed to reject orders",
+        });
+      }
+    });
+
+    // Get Pending Orders Statistics
+
+    app.get("/orders/pending-stats", async (req, res) => {
+      try {
+        const pendingOrders = await ordersCollection
+          .find({ status: "pending" })
+          .toArray();
+
+        const totalPending = pendingOrders.length;
+        const totalValue = pendingOrders.reduce(
+          (sum, o) => sum + (o.total || 0),
+          0,
+        );
+        const avgValue = totalPending > 0 ? totalValue / totalPending : 0;
+
+        // Group by payment method
+        const paymentMethods = {};
+        pendingOrders.forEach((order) => {
+          const method = order.paymentMethod || "Unknown";
+          if (!paymentMethods[method]) {
+            paymentMethods[method] = { count: 0, total: 0 };
+          }
+          paymentMethods[method].count++;
+          paymentMethods[method].total += order.total || 0;
+        });
+
+        // Get oldest pending order
+        const oldestOrder =
+          pendingOrders.length > 0
+            ? pendingOrders.sort(
+                (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
+              )[0]
+            : null;
+
+        res.send({
+          totalPending,
+          totalValue: totalValue.toFixed(2),
+          avgValue: avgValue.toFixed(2),
+          paymentMethods,
+          oldestOrderDate: oldestOrder ? oldestOrder.createdAt : null,
+          oldestOrderId: oldestOrder ? oldestOrder.orderId : null,
+        });
+      } catch (error) {
+        console.error("Pending stats error:", error);
+        res.status(500).send({ message: "Failed to fetch pending statistics" });
+      }
+    });
+
+    // --- Approved Orders ----
+
+    //Get Orders by Specific Status
+    app.get("/orders/production/:status", async (req, res) => {
+      try {
+        const { status } = req.params;
+
+        const validStatuses = [
+          "confirmed",
+          "in-production",
+          "quality-check",
+          "packed",
+          "in-transit",
+          "out-for-delivery",
+        ];
+
+        if (!validStatuses.includes(status)) {
+          return res.status(400).send({ message: "Invalid status" });
+        }
+
+        const query = { status: status };
+        const options = { sort: { updatedAt: -1 } };
+        const cursor = ordersCollection.find(query, options);
+        const result = await cursor.toArray();
+
+        res.send(result);
+      } catch (error) {
+        console.error("Get orders by status error:", error);
+        res.status(500).send({ message: "Failed to fetch orders" });
+      }
+    });
+
+    // Production Stats (for dashboard)
+    app.get("/orders/production-stats", async (req, res) => {
+      try {
+        const approvedStatuses = [
+          "confirmed",
+          "in-production",
+          "quality-check",
+          "packed",
+          "in-transit",
+          "out-for-delivery",
+        ];
+
+        const approvedOrders = await ordersCollection
+          .find({ status: { $in: approvedStatuses } })
+          .toArray();
+
+        const stats = {
+          total: approvedOrders.length,
+          confirmed: approvedOrders.filter((o) => o.status === "confirmed")
+            .length,
+          inProduction: approvedOrders.filter(
+            (o) => o.status === "in-production",
+          ).length,
+          qualityCheck: approvedOrders.filter(
+            (o) => o.status === "quality-check",
+          ).length,
+          packed: approvedOrders.filter((o) => o.status === "packed").length,
+          inTransit: approvedOrders.filter((o) =>
+            ["in-transit", "out-for-delivery"].includes(o.status),
+          ).length,
+          totalValue: approvedOrders.reduce(
+            (sum, o) => sum + (o.total || 0),
+            0,
+          ),
+        };
+
+        // Average production time (if confirmed date exists)
+        const completedOrders = approvedOrders.filter(
+          (o) => o.status === "packed" && o.confirmedAt,
+        );
+
+        if (completedOrders.length > 0) {
+          const avgTime =
+            completedOrders.reduce((sum, o) => {
+              const start = new Date(o.confirmedAt);
+              const end = new Date(o.updatedAt);
+              return sum + (end - start) / (1000 * 60 * 60 * 24); // days
+            }, 0) / completedOrders.length;
+
+          stats.avgProductionDays = avgTime.toFixed(1);
+        }
+
+        res.send(stats);
+      } catch (error) {
+        console.error("Production stats error:", error);
+        res
+          .status(500)
+          .send({ message: "Failed to fetch production statistics" });
+      }
+    });
+
+    //Bulk Status Update (for production line)
+    app.patch("/orders/bulk-status-update", async (req, res) => {
+      try {
+        const { orderIds, newStatus } = req.body;
+
+        if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+          return res.status(400).send({
+            success: false,
+            message: "Order IDs are required",
+          });
+        }
+
+        const validStatuses = [
+          "confirmed",
+          "in-production",
+          "quality-check",
+          "packed",
+          "in-transit",
+          "out-for-delivery",
+          "delivered",
+        ];
+
+        if (!validStatuses.includes(newStatus)) {
+          return res.status(400).send({
+            success: false,
+            message: "Invalid status",
+          });
+        }
+
+        const objectIds = orderIds.map((id) => new ObjectId(id));
+
+        const updateDoc = {
+          $set: {
+            status: newStatus,
+            updatedAt: new Date(),
+          },
+        };
+
+        // Add specific timestamps
+        if (newStatus === "in-production") {
+          updateDoc.$set.productionStartedAt = new Date();
+        } else if (newStatus === "packed") {
+          updateDoc.$set.packedAt = new Date();
+        } else if (newStatus === "in-transit") {
+          updateDoc.$set.shippedAt = new Date();
+        } else if (newStatus === "delivered") {
+          updateDoc.$set.deliveredDate = new Date();
+        }
+
+        const result = await ordersCollection.updateMany(
+          { _id: { $in: objectIds } },
+          updateDoc,
+        );
+
+        res.send({
+          success: true,
+          message: `${result.modifiedCount} orders updated to ${newStatus}`,
+          modifiedCount: result.modifiedCount,
+        });
+      } catch (error) {
+        console.error("Bulk status update error:", error);
+        res.status(500).send({
+          success: false,
+          message: "Failed to update orders",
+        });
       }
     });
 
