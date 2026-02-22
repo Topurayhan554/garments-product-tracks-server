@@ -1,3 +1,4 @@
 node_modules
 .env
 .vercel
+garments-production-tracker-firebase-adminsdk.json

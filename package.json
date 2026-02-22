@@ -14,6 +14,7 @@
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "firebase-admin": "^13.6.1",
+    "git-filter-repo": "^0.0.30",
     "mongodb": "^7.0.0"
   }
 }
