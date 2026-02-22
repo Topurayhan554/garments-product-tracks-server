@@ -6,7 +6,12 @@ require("dotenv").config();
 const port = process.env.PORT || 3000;
 
 const admin = require("firebase-admin");
-const serviceAccount = require("./garments-production-tracker-firebase-adminsdk.json");
+// const serviceAccount = require("./garments-production-tracker-firebase-adminsdk.json");
+
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
+  "utf8",
+);
+const serviceAccount = JSON.parse(decoded);
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -37,7 +42,7 @@ const verifyToken = async (req, res, next) => {
 
   try {
     const decoded = await admin.auth().verifyIdToken(token);
-    req.decoded_email = decoded.email; // পরের middleware এ use হবে
+    req.decoded_email = decoded.email;
     next();
   } catch (error) {
     return res.status(401).send({ message: "Unauthorized: Invalid token" });
@@ -1035,8 +1040,8 @@ async function run() {
       }
     });
 
-    await client.db("admin").command({ ping: 1 });
-    console.log("Connected to MongoDB successfully!");
+    // await client.db("admin").command({ ping: 1 });
+    // console.log("Connected to MongoDB successfully!");
   } finally {
     // await client.close();
   }
@@ -1048,6 +1053,8 @@ app.get("/", (req, res) => {
   res.send("Garments Production Tracker is running!");
 });
 
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
+if (process.env.NODE_ENV !== "production") {
+  app.listen(port, () => console.log(`Running on port ${port}`));
+}
+
+module.exports = app;
